@@ -12,19 +12,19 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import sockets.*;
+import justachat.Client;
 
 public class Chat {
-    
-    Chat(Client client){
-        this.client=client;
+    public static void main(String[] args) {
+        new Chat().init();
     }
+    
+    Chat() {}
 
     Chat(String ip, int serverPort, int clientPort) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
     
-    void init(){
+    void init() {
         int width=500, height=600;
         
         frame=new JFrame();
@@ -33,9 +33,9 @@ public class Chat {
         frame.setLocationRelativeTo(null);
         
         Color background=new Color(230, 230, 230), upper=Color.GRAY.brighter();
-        panel=new JPanel(){
+        panel=new JPanel() {
             @Override
-            public void paintComponent(java.awt.Graphics g){
+            public void paintComponent(java.awt.Graphics g) {
                 super.paintComponent(g);
                 setBackground(background);
                 g.setColor(upper);
@@ -43,15 +43,15 @@ public class Chat {
             }
         };
         
-        labelName=new JLabel(client.getInfo().getName());
+        labelName=new JLabel("");
         labelName.setFont(new java.awt.Font("Nirmala UI Semilight", java.awt.Font.BOLD, 40));
         labelName.setHorizontalAlignment(JLabel.CENTER);
         
-        labelIp=new JLabel("Ip: "+client.getInfo().getIp());
+        labelIp=new JLabel("Ip: "+"");
         labelIp.setFont(new java.awt.Font("Nirmala UI Semilight", java.awt.Font.BOLD, 15));
         labelIp.setHorizontalAlignment(JLabel.CENTER);
         
-        labelPort=new JLabel("Port: "+String.valueOf(client.getInfo().getPort()));
+        labelPort=new JLabel("Port: "+"");
         labelPort.setFont(new java.awt.Font("Nirmala UI Semilight", java.awt.Font.BOLD, 15));
         labelPort.setHorizontalAlignment(JLabel.CENTER);
         
@@ -60,22 +60,22 @@ public class Chat {
         area=new JTextArea();
         scrollPane=new JScrollPane(area);
         
-        field.addKeyListener(new java.awt.event.KeyAdapter(){
+        field.addKeyListener(new java.awt.event.KeyAdapter() {
             @Override
-            public void keyPressed(java.awt.event.KeyEvent e){
-                if(e.getKeyCode()==KeyEvent.VK_ENTER){
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                if(e.getKeyCode()==KeyEvent.VK_ENTER) {
                     send.doClick();
                 }
             }
         });
         
-        send.addActionListener(new ActionListener(){
+        send.addActionListener(new ActionListener() {
             @Override
-            public void actionPerformed(ActionEvent e){
-                String msg=field.getText().trim();
-                if(msg.equals("")) return;
-                area.append("You: "+msg+"\n\n");
-                sendMessage(msg);
+            public void actionPerformed(ActionEvent e) {
+                String pkg=field.getText().trim();
+                if(pkg.equals("")) return;
+                area.append("You: "+pkg+"\n\n");
+                sendPack(pkg);
                 field.setText("");
             }
         });
@@ -110,9 +110,9 @@ public class Chat {
         area.setEnabled(false);
         area.setDisabledTextColor(Color.BLACK);
         
-        frame.addWindowListener(new java.awt.event.WindowAdapter(){
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
-            public void windowClosing(java.awt.event.WindowEvent e){
+            public void windowClosing(java.awt.event.WindowEvent e) {
                 client.leave();
             }
         });
@@ -120,33 +120,33 @@ public class Chat {
         frame.setVisible(true);
     }
     
-    void sendMessage(String msg){
-        client.send(msg);
+    void sendPack(String pkg) {
+        client.send(pkg);
     }
     
-    void receiveMessage(String name, String ip, String body){
+    void receivePack(String name, String ip, String body) {
         area.append(name+" ("+ip+") : "+body+"\n\n");
     }
     
-    void userJoined(String name, String ip, String body){
+    void userJoined(String name, String ip, String body) {
         area.append("****** "+name+" ("+ip+") joined the party!!!"+"\n\n");
     }
     
-    void userLeft(String name, String ip, String body){
+    void userLeft(String name, String ip, String body) {
         area.append("****** "+name+" ("+ip+") left the party!!!"+"\n\n");
     }
     
-    void joinAproved(){
+    void joinAproved() {
     }
     
-    void joinRejected(Message msg){
-        String s="Name\tIp\tPort\n";
-        
-        for (ClientInfo c: (java.util.ArrayList<ClientInfo>)msg.getInfo()){
-            s+="\n"+c.getName()+"\t"+c.getIp()+"\t"+c.getPort();
-        }
-        JOptionPane.showMessageDialog(null, "Error. Check the list below and please join again with different value(s):\n\n"+s);
-    }
+//    void joinRejected(Pack pkg) {
+//        String s="Name\tIp\tPort\n";
+//        
+//        for (Info c: (java.util.ArrayList<Info>)pkg.getInfo()) {
+//            s+="\n"+c.getName()+"\t"+c.getIp()+"\t"+c.getPort();
+//        }
+//        JOptionPane.showPackDialog(null, "Error. Check the list below and please join again with different value(s):\n\n"+s);
+//    }
     
     void appendArea(String str) {
         area.append(str);

@@ -1,209 +1,252 @@
 package justachat;
 
+import info.*;
+import gui.*;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.regex.Pattern;
-import javax.swing.JOptionPane;
 
-public class Client{
-    
-    public static void main(String args[]){
-        String name=askName(), ip=askIP();
-        int port=askPort();
-        
-        Client client=new Client(name);
-        client.join(ip, port);
-        client.listen();
+public class Client {
+
+    public static void main(String args[]) {
+        Client c = new Client();
+        c.homeView = new HomeView(c);
+        c.homeView.init();
     }
-    
-    public Client(String name){
-        info=new ClientInfo(name);
+
+    public Client() {
     }
-    
-    static String askName(){
-        String[] noNames={"", "you", "server"};
-        String name;
-        do{
-            name=JOptionPane.showInputDialog("How do you wanna be called?").trim();
-            if(!in(name, noNames)) break;
-        }while(true);
-        
-        return name;
+
+    public synchronized void listen() {
+        listen(port);
     }
-    
-    static String askIP() {
-        String msgPrefix="";
-        String ip = "";
-        // https://stackoverflow.com/questions/5667371/validate-ipv4-address-in-java
-        String ipFormat =  "^(([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.){3}([01]?\\d\\d?|2[0-4]\\d|25[0-5])$";
-        boolean match = false;
+
+//    public synchronized void listen(int port) {
+//        listening = false;
+//        if(t != null) t.interrupt();
+//        
+//        if(t != null) try {
+//            t.join();
+//        } catch (InterruptedException ex) {
+////            Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+//        }
+//        
+//        listening = true;
+//        
+//        listenSecure(port);
+//    }
+
+    Thread t;
+    static int threads = 0;
+
+    public synchronized void listen(int port) {
+        if(listening) return;
         
-        while(!match) {
-            ip = JOptionPane.showInputDialog(msgPrefix+"Type your ip (empty for localhost):");
-            if (ip.equals("")) return LOCALHOST;
-            
-            match = Pattern.compile(ipFormat).matcher(ip).find();
-            if (!match && msgPrefix.equals("")) msgPrefix = "Try again. ";
-        }
-        return ip;
-    }
-    
-    static int askPort(){
-        int port=-1;
-        String msgPrefix="";
-        
-        while(port<=0 || port>9999){
-            try{
-                port=Integer.parseInt(JOptionPane.showInputDialog(msgPrefix+"Type your port:"));
-            }catch(NumberFormatException e){
-                port=-1;
-                if(msgPrefix.equals("")) msgPrefix="Try Again\n";
+        t = new Thread(new Runnable() {
+            @Override
+            public synchronized void run() {
+                if(listening) return;
+                
+                listening = true;
+                
+                System.out.println("client port: " + port);
+                try ( ServerSocket server = new ServerSocket(port)) {
+                    Socket smbd = null;
+                    ObjectInputStream in = null;
+
+                    while (listening) {
+                        smbd = server.accept();
+                        in = new ObjectInputStream(smbd.getInputStream());
+
+                        Pack pkg = (Pack) in.readObject();
+                        System.out.println("Request incoming..." + pkg.getType());
+                        switch (pkg.getType()) {
+                            case Pack.CHECK_SERVER_APROVED:
+                                checkServerAproved(pkg);
+                                break;
+                            case Pack.JOIN_APROVED:
+                                joinAproved();
+                                break;
+                            case Pack.JOIN_REJECTED:
+                                joinRejected(pkg);
+                                break;
+                            case Pack.JOIN_EVENT:
+                                userJoined(pkg);
+                                break;
+                            case Pack.MESSAGE:
+                                receivePack(pkg);
+                                break;
+                            case Pack.LEAVE:
+                                userLeft(pkg);
+                                break;
+
+                        }
+                    }
+
+                    if (smbd != null) {
+                        smbd.close();
+                    }
+                    if (in != null) {
+                        in.close();
+                    }
+                    System.out.println("listening finished");
+                } catch (IOException ex) {
+                    System.out.println("ERROR: unable to open port.");
+                } catch (Exception ex) {
+                    System.out.println("ERROR: unexpected exception");
+                }
             }
-        }
-        return port;
+        }, "Listening " + (++threads));
+        t.start();
     }
-    
-    void join(String ip, int port){
-        info.setIp(ip);
-        info.setPort(port);
-        
+
+    public boolean checkServer(String ip, int serverPort) {
+
+        System.out.println("Getting info: Ip=" + ip + ", Port=" + serverPort);
+        try (
+                 Socket socket = new Socket(ip, serverPort);  ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+            out.writeObject(new Pack(port, Pack.CHECK_SERVER_REQUEST));
+
+        } catch (IOException ex) {
+            System.out.println("ERROR: Impossible connection.");
+            return false;
+        }
+        return true;
+    }
+
+    public void join(String ip, int serverPort, String serverName, int port, String name) {
+        this.ip = ip;
+        this.serverPort = serverPort;
+        this.serverName = serverName;
+        this.port = port;
+        this.name = name;
+
         System.out.println("Trying to join...");
-        try(
-                Socket socket=new Socket(info.ip, SERVER_PORT);
-                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())
-            ) {
-            out.writeObject(new Message(info, Message.JOIN_REQUEST));
-            
+        try (
+                 Socket socket = new Socket(ip, serverPort);  ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+            out.writeObject(new Pack(new Info(port, name), Pack.JOIN_REQUEST));
+
         } catch (IOException ex) {
             System.out.println("ERROR: Impossible connection.");
         }
     }
-    
-    static boolean in(String name, String[] noNames){
-        for(String n: noNames)
-            if(name.toLowerCase().equals(n))
-                return true;
-        
-        return false;
-    }
-    
-    void listen(){
-        Thread listening=new Thread(new Runnable(){
-            @Override
-            public void run(){
-                try {
-                    ServerSocket server=new ServerSocket(info.getPort());
-                    while(true){
-                        try (
-                                Socket smbd=server.accept();
-                                ObjectInputStream in=new ObjectInputStream(smbd.getInputStream())
-                            ) {
-                            Message msg=(Message) in.readObject();
-                            switch(msg.getType()){
-                                case Message.JOIN_APROVED:
-                                    joinAproved();
-                                    break;
-                                case Message.JOIN_REJECTED:
-                                    joinRejected(msg);
-                                    break;
-                                case Message.JOIN_EVENT:
-                                    userJoined(msg);
-                                    break;
-                                case Message.MESSAGE:
-                                    receiveMessage(msg);
-                                    break;
-                                case Message.LEAVE:
-                                    userLeft(msg);
-                                    break;
-                                
-                            }
-                        } catch (ClassNotFoundException ex) {
-                            System.out.println("ERROR: unable to read message.");
-                        }
-                    }
-                } catch (IOException ex) {
-                    System.out.println("ERROR: unable to open port.");
-                }
-            }
-        });
-        listening.start();
-    }
-    
-    public void send(String msg){
-        System.out.println("Sending message: \""+msg+"\".");
-        
+
+    public void send(String pkg) {
+        System.out.println("Sending Pack: \"" + pkg + "\".");
+
         try (
-                Socket socket=new Socket(SERVER_IP, SERVER_PORT);
-                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())
-            ) {
-            out.writeObject(new Message(info, msg, Message.MESSAGE));
-        }catch (IOException ex) {
+                 Socket socket = new Socket(ip, serverPort);  ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+            out.writeObject(new Pack(new Info(ip, port, name), pkg, Pack.MESSAGE));
+        } catch (IOException ex) {
             System.out.println("ERROR: Impossible connection.");
         }
     }
-    
-    public void leave(){
+
+    public void leave() {
         System.out.println("Leaving...");
-        
+
         try {
             try (
-                    Socket socket=new Socket(SERVER_IP, SERVER_PORT);
-                    ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())
-                ) {
-                out.writeObject(new Message(info, Message.LEAVE));
+                     Socket socket = new Socket(ip, serverPort);  ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())) {
+                out.writeObject(new Pack(new Info(ip, port, name), Pack.LEAVE));
             }
-            
+
         } catch (IOException ex) {
             System.out.println("ERROR: Conexión imposible.");
         }
     }
-    
-    void receiveMessage(Message msg){
-        ClientInfo c=(ClientInfo)msg.getInfo();
-        user.receiveMessage(c.getName(), c.getIp(), msg.getBody());
-    }
-    
-    void userJoined(Message msg){
-        ClientInfo c=(ClientInfo)msg.getInfo();
-        user.userJoined(c.getName(), c.getIp(), msg.getBody());
-    }
-    
-    void userLeft(Message msg){
-        ClientInfo c=(ClientInfo)msg.getInfo();
-        user.userLeft(c.getName(), c.getIp(), msg.getBody());
-    }
-    
-    void joinAproved(){
-        System.out.println("Succesfull. You're ready to message people!\n");
-        //user.joinAproved();
-    }
-    
-    void joinRejected(Message msg){
-        System.out.println("Joining failed!");
-        user.joinRejected(msg);
+
+    void checkServerAproved(Pack pkg) {
+        System.out.println("Check server aproved");
+        homeView.checkServerAproved(pkg);
     }
 
-    public ClientInfo getInfo() {
-        return info;
+    void receivePack(Pack pkg) {
     }
 
-    public void setInfo(ClientInfo info) {
-        this.info = info;
+    void userJoined(Pack pkg) {
     }
 
-    public UserInterface getUser() {
-        return user;
+    void userLeft(Pack pkg) {
     }
 
-    public void setUser(UserInterface user) {
-        this.user = user;
+    void joinAproved() {
+        System.out.println("Join server aproved");
+        homeView.joinServerAproved();
     }
-    
-    
-    private ClientInfo info;
-    private UserInterface user;
-    private final static String LOCALHOST = "localhost";
+
+    void joinRejected(Pack pkg) {
+    }
+
+    public int getServerPort() {
+        return serverPort;
+    }
+
+    public void setServerPort(int serverPort) {
+        this.serverPort = serverPort;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
+    }
+
+    public String getIp() {
+        return ip;
+    }
+
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getServerName() {
+        return serverName;
+    }
+
+    public void setServerName(String serverName) {
+        this.serverName = serverName;
+    }
+
+    public HomeView getHomeView() {
+        return homeView;
+    }
+
+    public void setHomeView(HomeView homeView) {
+        this.homeView = homeView;
+    }
+
+    public Chat getChatView() {
+        return chatView;
+    }
+
+    public void setChatView(Chat chatView) {
+        this.chatView = chatView;
+    }
+
+    public boolean isListening() {
+        return listening;
+    }
+
+    public void setListening(boolean listening) {
+        this.listening = listening;
+    }
+
+    private int serverPort, port;
+    private String ip, name, serverName;
+    private HomeView homeView;
+    private Chat chatView;
+    private volatile boolean listening;
 }

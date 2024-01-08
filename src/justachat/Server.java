@@ -1,5 +1,7 @@
 package justachat;
 
+import info.Info;
+import info.Pack;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -12,88 +14,92 @@ import java.util.regex.Pattern;
 
 public class Server {
     
-    public static void main(String args[]){
+    public static void main(String args[]) {
         String ip=askIP();
         int port=askPort();
         
-        Server server=new Server(port, ip);
+        Server server=new Server(ip, port, "server");
         server.start();
     }
     
-    public Server(){
-        this(3000, LOCALHOST);
+    public Server() {
+        this(LOCALHOST, 3000, "server");
     }
     
-    public Server(int port, String ip){
-        this.port = port;
+    public Server(String ip, int port, String name) {
         this.ip = ip;
-        clients=new ArrayList();
+        this.port = port;
+        this.name = name;
+        clients = new ArrayList();
     }
     
     static String askIP() {
         Scanner s = new Scanner(System.in);
-        String msgPrefix="";
+        String pkgPrefix="";
         String ip = "";
         // https://stackoverflow.com/questions/5667371/validate-ipv4-address-in-java
-        String ipFormat =  "^(([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.){3}([01]?\\d\\d?|2[0-4]\\d|25[0-5])$";
+        String ipFormat =  "^(([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.) {3}([01]?\\d\\d?|2[0-4]\\d|25[0-5])$";
         boolean match = false;
         
         while(!match) {
-            System.out.print(msgPrefix+"Type your ip (empty for localhost): ");
+            System.out.print(pkgPrefix+"Type your ip (empty for localhost): ");
             ip = s.nextLine().trim();
             if (ip.equals("")) return LOCALHOST;
             
             match = Pattern.compile(ipFormat).matcher(ip).find();
-            if (!match && msgPrefix.equals("")) msgPrefix = "Try again. ";
+            if (!match && pkgPrefix.equals("")) pkgPrefix = "Try again. ";
         }
         return ip;
     }
     
-    static int askPort(){
+    static int askPort() {
         int port=-1;
-        String msgPrefix="";
+        String pkgPrefix="";
         Scanner s = new Scanner(System.in);
         
-        while(port<=0 || port>9999){
+        while(port<=0 || port>9999) {
             try{
-                System.out.print(msgPrefix+"Type your port: ");
+                System.out.print(pkgPrefix+"Type your port: ");
                 port = s.nextInt();
-            }catch(InputMismatchException e){
+            }catch(InputMismatchException e) {
                 port=-1;
-                if(msgPrefix.equals("")) msgPrefix="Try Again. ";
+                if(pkgPrefix.equals("")) pkgPrefix="Try Again. ";
             }
         }
         return port;
     }
     
-    void start(){
-        Thread listening=new Thread(new Runnable(){
+    void start() {
+        Thread listening=new Thread(new Runnable() {
             @Override
-            public void run(){
-                try (ServerSocket server=new ServerSocket(port)){
+            public void run() {
+                try (ServerSocket server=new ServerSocket(port)) {
                     System.out.println("Server open on port "+port+"!\n");
                     
-                    while(true){
+                    while(true) {
                         try (
                                 Socket client=server.accept();
                                 ObjectInputStream in = new ObjectInputStream(client.getInputStream())
                             ) {
-                            Message msg=(Message) in.readObject();
-                            switch(msg.getType()){
-                                case Message.JOIN_REQUEST:
-                                    System.out.println("ajksdn");
-                                    joinClient(msg);
+                            Pack pkg=(Pack) in.readObject();
+                            System.out.println("Request incoming..." + pkg.getType());
+                            switch(pkg.getType()) {
+                                case Pack.CHECK_SERVER_REQUEST:
+                                    checkRequest(pkg);
                                     break;
-                                case Message.MESSAGE:
-                                    manageMessage(msg);
+                                case Pack.JOIN_REQUEST:
+                                    joinClient(pkg);
                                     break;
-                                case Message.LEAVE:
-                                    quitUser(msg);
+                                case Pack.MESSAGE:
+                                    managePack(pkg);
+                                    break;
+                                case Pack.LEAVE:
+                                    quitUser(pkg);
                                     break;
                             }
                             System.out.println("");
                         } catch (Exception ex) {
-                            System.out.println("ERROR: Unable to read message.");
+                            System.out.println("ERROR: Unable to read Pack.");
                             //ex.printStackTrace();
                         }
                     }
@@ -106,56 +112,67 @@ public class Server {
         listening.start();
     }
     
-    boolean joinClient(Message msg) throws IOException{
-        ClientInfo client=(ClientInfo)msg.getInfo();
+    boolean checkRequest(Pack pkg) throws IOException{
+        int clientPort = (int) pkg.getInfo();
+        System.out.println("Getting info: Ip="+ ip + ", Port="+clientPort);
+
+        Socket socket = new Socket(ip, clientPort);
+        ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+
+        out.writeObject(new Pack(infoServer(socket), Pack.CHECK_SERVER_APROVED));
+        return false;
+    }
+    
+    boolean joinClient(Pack pkg) throws IOException{
+        Info client = (Info)pkg.getInfo();
         
         try(
-                Socket socket=new Socket(client.getIp(), client.getPort());
-                ObjectOutputStream out=new ObjectOutputStream(socket.getOutputStream())
-            ){
-            if(validClient(client)){
-                for(ClientInfo c: clients){
+                Socket socket = new Socket(client.getIp(), client.getPort());
+                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream())
+            ) {
+            if(validClient(client)) {
+                for(Info c: clients) {
                     try(
-                            Socket socket2=new Socket(c.getIp(), c.getPort());
-                            ObjectOutputStream out2=new ObjectOutputStream(socket2.getOutputStream())
-                        ){
-                        out2.writeObject(new Message(client, Message.JOIN_EVENT));
+                            Socket socket2 = new Socket(c.getIp(), c.getPort());
+                            ObjectOutputStream out2 = new ObjectOutputStream(socket2.getOutputStream())
+                        ) {
+                        out2.writeObject(new Pack(client, Pack.JOIN_EVENT));
                     }
                 }
                 clients.add(client);
-                out.writeObject(new Message(Message.JOIN_APROVED));
+                out.writeObject(new Pack(Pack.JOIN_APROVED));
                 System.out.println("****** "+client.getName()+" joins the party!");
                 
                 return true;
             }
             else{
-                out.writeObject(new Message(infoServer(), Message.JOIN_REJECTED));
+                out.writeObject(new Pack(infoServer(socket), Pack.JOIN_REJECTED));
             }
         }
         return false;
     }
     
-    void manageMessage(Message msg) throws IOException{
-        ClientInfo client=(ClientInfo)msg.getInfo();
+    void managePack(Pack pkg) throws IOException{
+        Info client=(Info)pkg.getInfo();
         
-        if(hasClient(client)){
-            System.out.println(client.getName()+" ("+client.getIp()+"): "+msg.getBody());
-            for(ClientInfo c: clients){
+        if(hasClient(client)) {
+            System.out.println(client.getName()+" ("+client.getIp()+"): "+pkg.getBody());
+            for(Info c: clients) {
                 if(!!client.getIp().equals(c.getIp()) && client.getPort()!=c.getPort())
                     try(
                             Socket socket=new Socket(c.getIp(), c.getPort());
                             ObjectOutputStream out=new ObjectOutputStream(socket.getOutputStream())
-                        ){
-                        out.writeObject(new Message(client, msg.getBody(), Message.MESSAGE));
+                        ) {
+                        out.writeObject(new Pack(client, pkg.getBody(), Pack.MESSAGE));
                     }
             }
         }else{
-            System.out.println("***REJECTED MESSAGE***");
+            System.out.println("***REJECTED Pack***");
         }
     }
     
-    void quitUser(Message msg) throws IOException{
-        ClientInfo client=(ClientInfo)msg.getInfo();
+    void quitUser(Pack pkg) throws IOException{
+        Info client=(Info)pkg.getInfo();
         
         if(!hasClient(client)) return;
         
@@ -164,41 +181,42 @@ public class Server {
                 clients.remove(i);
         System.out.println("****** "+client.getName()+" leaves the chat.");
         
-        for(ClientInfo c: clients){
+        for(Info c: clients) {
             if(!!client.getIp().equals(c.getIp()) && client.getPort()!=c.getPort())
                 try(
                         Socket socket=new Socket(c.getIp(), c.getPort());
                         ObjectOutputStream out=new ObjectOutputStream(socket.getOutputStream())
-                    ){
-                    out.writeObject(new Message(client, Message.LEAVE));
+                    ) {
+                    out.writeObject(new Pack(client, Pack.LEAVE));
                 }
         }
     }
     
-    boolean validClient(ClientInfo client){
-        if(ip.equals(client.getIp()) && port==client.getPort()) return false;
+    boolean validClient(Info client) {
+        if(ip.equals(client.getIp()) && port == client.getPort()) return false;
         return !hasClient(client);
     }
     
-    boolean hasClient(ClientInfo client){
-        for(ClientInfo c: clients)
+    boolean hasClient(Info client) {
+        for(Info c: clients)
             if(client.equals(c)) return true;
         
         return false;
     }
     
-    ArrayList<ClientInfo> infoServer(){
-        ArrayList<ClientInfo> info=new ArrayList();
+    ArrayList<Info> infoServer(Socket socket) {
+        ArrayList<Info> infoUsers=new ArrayList();
         
-        info.add(new ClientInfo("Server", ip, port));
-        for(ClientInfo c: clients) info.add(c);
+        infoUsers.add(new Info(socket.getInetAddress().getHostAddress(), port, name));
+        for(Info c: clients) infoUsers.add(c);
         
-        return info;
+        return infoUsers;
     }
     
     static final String LOCALHOST = "localhost";
-    final String ip;
+//    final Info info;
+    final String ip, name;
     final int port;
-    ArrayList<ClientInfo> clients;
+    ArrayList<Info> clients;
     
 }

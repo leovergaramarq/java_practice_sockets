@@ -1,18 +1,7 @@
 package gui;
 
-import com.sun.glass.events.KeyEvent;
-import java.awt.Color;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import sockets.*;
+import info.Pack;
+import justachat.Client;
 
 public class UserInterface {
 
@@ -20,10 +9,10 @@ public class UserInterface {
     
     public UserInterface(Client client) {
         this.client = client;
+        home = new HomeView(client);
     }
     
     public void init() {
-        home = new Home();
         home.init();
     }
     
@@ -31,7 +20,25 @@ public class UserInterface {
         Chat chat = new Chat(ip, serverPort, clientPort);
         chat.init();
     }
+
+    public void receivePack(String name, String ip, String body) {
+        
+    }
+
+    public void userJoined(String name, String ip, String body) {
+    }
+
+    public void joinRejected(Pack pkg) {
+    }
+    
+    public void userLeft(String name, String ip, String body) {
+    }
     
     Client client;
-    Home home;
+    HomeView home;
+
+    public void checkAproved(Pack pkg) {
+        home.checkServerAproved(pkg);
+    }
+
 }
